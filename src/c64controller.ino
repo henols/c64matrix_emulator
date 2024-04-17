@@ -1,22 +1,20 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#define PRINTBIN(Num)                                           
-#ifdef DEBUG                                                   \
-  for (uint32_t t = (1UL << (sizeof(Num) * 8) - 1); t; t >>= 1) \
-  Serial.write(Num &t ? '1' : '0') 
+#define PRINTBIN(Num)
+#ifdef DEBUG for (uint32_t t = (1UL << (sizeof(Num) * 8) - 1); t; t >>= 1) \
+    Serial.write(Num &t ? '1' : '0')
 #endif
 
-#define DEBUG_PRINTLN(x) 
-#ifdef DEBUG              \
-  Serial.println(x);     
+#define DEBUG_PRINTLN(x)
+#ifdef DEBUG \
+    Serial.println(x);
 #endif
 
-#define DEBUG_PRINT(x) 
-#ifdef DEBUG              \
-  Serial.print(x);     
+#define DEBUG_PRINT(x)
+#ifdef DEBUG \
+    Serial.print(x);
 #endif
-
 
 // Pins assigned to addMT8808_RESETs lines MT8808_AX0-MT8808_AX2 and MT8808_AY0-MT8808_AY2
 const int MT8808_AX0 = 10;
@@ -96,7 +94,8 @@ void resetMatrix(bool resetTextMode)
   digitalWrite(MT8808_RESET, HIGH);
   digitalWrite(MT8808_RESET, LOW);
   pinMode(RESTORE, INPUT_PULLUP);
-  if(resetTextMode){
+  if (resetTextMode)
+  {
     DEBUG_PRINTLN("Reset matrix");
     text_mode = false;
   }
@@ -108,6 +107,10 @@ void pressRestore(bool state)
   DEBUG_PRINTLN(!state);
   pinMode(RESTORE, OUTPUT);
   digitalWrite(RESTORE, !state);
+  if (!state)
+  {
+    pinMode(RESTORE, INPUT_PULLUP);
+  }
 }
 
 void textMode(bool start)
@@ -115,7 +118,8 @@ void textMode(bool start)
   DEBUG_PRINT("Text mode: ");
   DEBUG_PRINTLN(start ? "ON" : "OFF");
   text_mode = start;
-  if(start) {
+  if (start)
+  {
     resetMatrix(false);
   }
 }
@@ -211,6 +215,16 @@ int checkResetScope()
 {
   int warm_reset_scope = 0;
   int cold_reset_scope = 0;
+
+  uint8_t bit = digitalPinToBitMask(RESTORE);
+  uint8_t port = digitalPinToPort(RESTORE);
+
+  volatile uint8_t *reg = portModeRegister(port);
+  if (*reg & bit)
+  {
+    return;
+  }
+  
   int restore_key = !digitalRead(RESTORE);
   if (restore_key == 1)
   {
@@ -306,7 +320,7 @@ void loop()
         DEBUG_PRINT(", pos: ");
         DEBUG_PRINT(pos);
         DEBUG_PRINT(", value: 0b");
-        PRINTBIN((uint8_t)(val&0x3F));
+        PRINTBIN((uint8_t)(val & 0x3F));
         DEBUG_PRINT(", state: ");
         DEBUG_PRINT(state);
         DEBUG_PRINT(", special: ");
@@ -322,8 +336,9 @@ void loop()
           setSpecial(val, state);
         }
       }
-        delay(15);
-      if(text_mode) {
+      delay(15);
+      if (text_mode)
+      {
         delay(10);
         resetMatrix(false);
       }
