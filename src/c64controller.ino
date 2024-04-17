@@ -1,9 +1,23 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#define PRINTBIN(Num)                                           \
+#define PRINTBIN(Num)                                           
+#ifdef DEBUG                                                   \
   for (uint32_t t = (1UL << (sizeof(Num) * 8) - 1); t; t >>= 1) \
-  Serial.write(Num &t ? '1' : '0')
+  Serial.write(Num &t ? '1' : '0') 
+#endif
+
+#define DEBUG_PRINTLN(x) 
+#ifdef DEBUG              \
+  Serial.println(x);     
+#endif
+
+#define DEBUG_PRINT(x) 
+#ifdef DEBUG              \
+  Serial.print(x);     
+#endif
+
+
 // Pins assigned to addMT8808_RESETs lines MT8808_AX0-MT8808_AX2 and MT8808_AY0-MT8808_AY2
 const int MT8808_AX0 = 10;
 const int MT8808_AX1 = 16;
@@ -39,6 +53,8 @@ int power_led_state = 1;
 unsigned long power_led_delay = 0;
 unsigned long matrix_delay = 0;
 
+bool text_mode = false;
+
 byte key_buffer[128];
 
 void setup()
@@ -65,48 +81,64 @@ void setup()
 
   Serial.begin(MONITOR_SPEED); // Initialize serial port
 
-  resetMatrix();
+  resetMatrix(true);
 }
 
-void strobeMatrix()
+void strobeMatrix(bool state)
 {
-  digitalWrite(MT8808_DAT, HIGH);
+  digitalWrite(MT8808_DAT, state);
   digitalWrite(MT8808_STR, HIGH);
   digitalWrite(MT8808_STR, LOW);
 }
 
-void resetMatrix()
+void resetMatrix(bool resetTextMode)
 {
   digitalWrite(MT8808_RESET, HIGH);
   digitalWrite(MT8808_RESET, LOW);
   pinMode(RESTORE, INPUT_PULLUP);
+  if(resetTextMode){
+    DEBUG_PRINTLN("Reset matrix");
+    text_mode = false;
+  }
 }
 
-void pressRestore()
+void pressRestore(bool state)
 {
+  DEBUG_PRINT("Restore: ");
+  DEBUG_PRINTLN(!state);
   pinMode(RESTORE, OUTPUT);
-  digitalWrite(RESTORE, LOW);
+  digitalWrite(RESTORE, !state);
+}
+
+void textMode(bool start)
+{
+  DEBUG_PRINT("Text mode: ");
+  DEBUG_PRINTLN(start ? "ON" : "OFF");
+  text_mode = start;
+  if(start) {
+    resetMatrix(false);
+  }
 }
 
 #ifdef DEBUG
 void debugMatrix(uint8_t addr)
 {
   PRINTBIN(addr);
-  Serial.println();
+  DEBUG_PRINTLN();
 }
 #endif
 
-void setSpecial(uint8_t addr)
+void setSpecial(uint8_t addr, bool state)
 {
 #ifdef DEBUG
-  Serial.println();
-  Serial.print("Special address: ");
+  DEBUG_PRINTLN();
+  DEBUG_PRINT("Special address: ");
   debugMatrix(addr);
 #endif
   switch (addr & 0x3F)
   {
   case 0:
-    pressRestore();
+    pressRestore(state);
     break;
   case 1:
     warmReset();
@@ -114,27 +146,33 @@ void setSpecial(uint8_t addr)
   case 2:
     coldReset();
     break;
+  case 3:
+    resetMatrix(true);
+    break;
+  case 4:
+    textMode(state);
+    break;
   }
 }
 
-void setMatrix(uint8_t addr)
+void setMatrix(uint8_t addr, int state)
 {
 #ifdef DEBUG
-  Serial.print("Matrix address: ");
+  DEBUG_PRINT("Matrix address: ");
   debugMatrix(addr);
 #endif
 
   for (int pos = 0; pos < 6; pos++)
   {
     int val = (addr >> pos) & 0x01;
-
     digitalWrite(MT8808_ADDRESS_LINES[pos], val);
   }
-  strobeMatrix();
+  strobeMatrix(state);
 }
 
 void warmReset()
 {
+  DEBUG_PRINTLN("Warm reset");
   pinMode(C64_RESET, OUTPUT);
   digitalWrite(C64_RESET, LOW);
   delay(200);
@@ -144,6 +182,7 @@ void warmReset()
 
 void coldReset()
 {
+  DEBUG_PRINTLN("Cold reset");
   pinMode(C64_EXROM, OUTPUT);
   digitalWrite(C64_EXROM, LOW);
   warmReset();
@@ -178,7 +217,7 @@ int checkResetScope()
     // initiate RESTORE push timer
     if (restore_first_press == 1)
     {
-      Serial.println("Restore key is pressed");
+      DEBUG_PRINTLN("Restore key is pressed");
       restore_first_press = 0;
       restore_start_time = millis(); // first time stamp
       delay(2);
@@ -187,7 +226,7 @@ int checkResetScope()
   }
   else if (restore_first_press == 0)
   {
-    Serial.println("Restore key is released");
+    DEBUG_PRINTLN("Restore key is released");
     restore_first_press = 1; // RESTORE button has been released
     can_reset = 1;
   }
@@ -204,7 +243,7 @@ int checkResetScope()
       togglePowerLed(400, 100);
       if (can_reset)
       {
-        Serial.println("Do warm reset");
+        DEBUG_PRINTLN("Do warm reset");
         warmReset();
       }
     }
@@ -213,7 +252,7 @@ int checkResetScope()
       togglePowerLed(200, 200);
       if (can_reset)
       {
-        Serial.println("Do cold reset");
+        DEBUG_PRINTLN("Do cold reset");
         coldReset();
       }
     }
@@ -247,12 +286,12 @@ void loop()
     uint8_t size = Serial.read();
     int len = Serial.readBytes(key_buffer, size);
 #ifdef DEBUG
-    Serial.print("Available:");
-    Serial.print(ava);
-    Serial.print(", Size:");
-    Serial.println(size);
-    Serial.print("read: ");
-    Serial.println(len);
+    DEBUG_PRINT("Available:");
+    DEBUG_PRINT(ava);
+    DEBUG_PRINT(", Size:");
+    DEBUG_PRINTLN(size);
+    DEBUG_PRINT("read: ");
+    DEBUG_PRINTLN(len);
 #endif
     if (size > 0)
     {
@@ -260,26 +299,34 @@ void loop()
       for (int pos = 0; pos < size; pos++)
       {
         uint8_t val = key_buffer[pos];
+        bool state = (val & 0x80) == 0x80;
 #ifdef DEBUG
-        Serial.print("buffer size: ");
-        Serial.print(size);
-        Serial.print(", pos: ");
-        Serial.print(pos);
-        Serial.print(", value: 0b");
-        PRINTBIN(val);
-        Serial.println();
+        DEBUG_PRINT("buffer size: ");
+        DEBUG_PRINT(size);
+        DEBUG_PRINT(", pos: ");
+        DEBUG_PRINT(pos);
+        DEBUG_PRINT(", value: 0b");
+        PRINTBIN((uint8_t)(val&0x3F));
+        DEBUG_PRINT(", state: ");
+        DEBUG_PRINT(state);
+        DEBUG_PRINT(", special: ");
+        DEBUG_PRINT((val & 0x40) == 0x40);
+        DEBUG_PRINTLN();
 #endif
-        if ((val & 0xC0) == 0)
+        if ((val & 0x40) == 0)
         {
-          setMatrix(val);
+          setMatrix(val, state);
         }
-        else if ((val & 0xC0) == 0x40)
+        else if ((val & 0x40) == 0x40)
         {
-          setSpecial(val);
+          setSpecial(val, state);
         }
       }
-      delay(20);
-      resetMatrix();
+        delay(15);
+      if(text_mode) {
+        delay(10);
+        resetMatrix(false);
+      }
     }
   }
 
