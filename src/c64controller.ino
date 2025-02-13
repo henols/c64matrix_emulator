@@ -1,20 +1,7 @@
+#include "c64contoller.h"
 #include <Arduino.h>
-#include <Wire.h>
 
-#define PRINTBIN(Num)
-#ifdef DEBUG for (uint32_t t = (1UL << (sizeof(Num) * 8) - 1); t; t >>= 1) \
-    Serial.write(Num &t ? '1' : '0')
-#endif
 
-#define DEBUG_PRINTLN(x)
-#ifdef DEBUG \
-    Serial.println(x);
-#endif
-
-#define DEBUG_PRINT(x)
-#ifdef DEBUG \
-    Serial.print(x);
-#endif
 
 // Pins assigned to addMT8808_RESETs lines MT8808_AX0-MT8808_AX2 and MT8808_AY0-MT8808_AY2
 const int MT8808_AX0 = 10;
@@ -124,21 +111,12 @@ void textMode(bool start)
   }
 }
 
-#ifdef DEBUG
-void debugMatrix(uint8_t addr)
-{
-  PRINTBIN(addr);
-  DEBUG_PRINTLN();
-}
-#endif
-
 void setSpecial(uint8_t addr, bool state)
 {
-#ifdef DEBUG
   DEBUG_PRINTLN();
   DEBUG_PRINT("Special address: ");
   debugMatrix(addr);
-#endif
+
   switch (addr & 0x3F)
   {
   case 0:
@@ -161,10 +139,9 @@ void setSpecial(uint8_t addr, bool state)
 
 void setMatrix(uint8_t addr, int state)
 {
-#ifdef DEBUG
+
   DEBUG_PRINT("Matrix address: ");
   debugMatrix(addr);
-#endif
 
   for (int pos = 0; pos < 6; pos++)
   {
@@ -201,10 +178,10 @@ void setPowerLed(int led_state)
   digitalWrite(C64_LED, power_led_state == 0);
 }
 
-void togglePowerLed(int on_state_millis, int off_state_millis)
+void togglePowerLed(unsigned long on_state_millis, unsigned long off_state_millis)
 {
   unsigned long time = millis() - power_led_delay;
-  if (time > on_state_millis && power_led_state || (time > off_state_millis && power_led_state == 0))
+  if ((time > on_state_millis && power_led_state) || (time > off_state_millis && power_led_state == 0))
   {
     power_led_delay = millis();
     setPowerLed((power_led_state + 1) % 2);
@@ -222,9 +199,9 @@ int checkResetScope()
   volatile uint8_t *reg = portModeRegister(port);
   if (*reg & bit)
   {
-    return;
+    return 0;
   }
-  
+
   int restore_key = !digitalRead(RESTORE);
   if (restore_key == 1)
   {
@@ -299,6 +276,12 @@ void loop()
     int ava = Serial.available();
     uint8_t size = Serial.read();
     int len = Serial.readBytes(key_buffer, size);
+    if(memcmp("cbm",key_buffer,3) == 0)
+    {
+      Serial.println("c64");
+      Serial.flush(); 
+      return;
+    }
 #ifdef DEBUG
     DEBUG_PRINT("Available:");
     DEBUG_PRINT(ava);
@@ -314,7 +297,6 @@ void loop()
       {
         uint8_t val = key_buffer[pos];
         bool state = (val & 0x80) == 0x80;
-#ifdef DEBUG
         DEBUG_PRINT("buffer size: ");
         DEBUG_PRINT(size);
         DEBUG_PRINT(", pos: ");
@@ -325,8 +307,8 @@ void loop()
         DEBUG_PRINT(state);
         DEBUG_PRINT(", special: ");
         DEBUG_PRINT((val & 0x40) == 0x40);
-        DEBUG_PRINTLN();
-#endif
+        DEBUG_PRINTLN("");
+      
         if ((val & 0x40) == 0)
         {
           setMatrix(val, state);
@@ -344,6 +326,5 @@ void loop()
       }
     }
   }
-
   setPowerLed(1);
 }
